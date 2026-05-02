@@ -59,7 +59,7 @@ jobs:
                     (($now - (.createdAt | fromdateiso8601)) / 86400 | floor) as $days |
                     {
                       color: $color,
-                      text: "#\(.number) \(.title) · @\(.author.login) · \($days) day(s) · <\(.url)|PR Link>",
+                      text: "#\(.number) \(.title) · @\(.author.login) · \($days) day(s) · <\(.url)|link>",
                       footer: "GitHub",
                       footer_icon: "https://github.githubassets.com/favicons/favicon.png",
                       ts: (.createdAt | fromdateiso8601)
