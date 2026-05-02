@@ -2,7 +2,7 @@ name: Open PR Reminder
 
 on:
   schedule:
-    - cron: '* * * * *'  # 9 AM WIB (UTC+7), Mon–Fri
+    - cron: '* * * * *'  # every minute
   workflow_dispatch:
 
 jobs:
@@ -30,12 +30,17 @@ jobs:
               --arg repo_url "$REPO_URL" \
               '{ text: "✅ No outstanding open PRs in <\($repo_url)|\($repo)>" }')
           else
+            # Rules in minutes
+            # 💀 HELP     = > 20 minutes
+            # ⏳ WAITING  = 3 - 20 minutes
+            # ✨ NEW      = 1 - 3 minutes
+
             HELP=$(echo "$PRS_JSON" | jq --argjson now "$NOW" \
-              '[.[] | select((($now - (.createdAt | fromdateiso8601)) / 86400) >= 14)]')
+              '[.[] | select((($now - (.createdAt | fromdateiso8601)) / 60) > 20)]')
             WAITING=$(echo "$PRS_JSON" | jq --argjson now "$NOW" \
-              '[.[] | select((($now - (.createdAt | fromdateiso8601)) / 86400) >= 3 and (($now - (.createdAt | fromdateiso8601)) / 86400) < 14)]')
+              '[.[] | select((($now - (.createdAt | fromdateiso8601)) / 60) >= 3 and (($now - (.createdAt | fromdateiso8601)) / 60) <= 20)]')
             NEW=$(echo "$PRS_JSON" | jq --argjson now "$NOW" \
-              '[.[] | select((($now - (.createdAt | fromdateiso8601)) / 86400) < 3)]')
+              '[.[] | select((($now - (.createdAt | fromdateiso8601)) / 60) >= 1 and (($now - (.createdAt | fromdateiso8601)) / 60) < 3)]')
 
             build_attachments() {
               local prs=$1
@@ -56,10 +61,10 @@ jobs:
                     text: "*\($label) \($desc)*"
                   }] +
                   [.[] |
-                    (($now - (.createdAt | fromdateiso8601)) / 86400 | floor) as $days |
+                    (($now - (.createdAt | fromdateiso8601)) / 60 | floor) as $mins |
                     {
                       color: $color,
-                      text: "#\(.number) \(.title) · @\(.author.login) · \($days) day(s)\n<\(.url)|View PR →>",
+                      text: "#\(.number) \(.title) · @\(.author.login) · \($mins) min(s)\n<\(.url)|View PR →>",
                       footer: "GitHub",
                       footer_icon: "https://github.githubassets.com/favicons/favicon.png",
                       ts: (.createdAt | fromdateiso8601)
@@ -68,8 +73,8 @@ jobs:
                 end'
             }
 
-            HELP_BLOCKS=$(build_attachments "$HELP"    "#FF4444" "💀 HELP"              "(2+ weeks)")
-            WAITING_BLOCKS=$(build_attachments "$WAITING" "#E8A838" "⏳ PATIENTLY WAITING" "(3 days – 2 weeks)")
+            HELP_BLOCKS=$(build_attachments "$HELP"    "#FF4444" "💀 HELP"              "(more than 20 mins)")
+            WAITING_BLOCKS=$(build_attachments "$WAITING" "#E8A838" "⏳ PATIENTLY WAITING" "(3 – 20 mins)")
             NEW_BLOCKS=$(build_attachments "$NEW"      "#2EB67D" "✨ NEW PR"             "(just opened!)")
 
             ALL_BLOCKS=$(jq -n \
