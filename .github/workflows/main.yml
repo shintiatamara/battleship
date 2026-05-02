@@ -89,7 +89,7 @@ jobs:
               --arg repo_url "$REPO_URL" \
               --argjson attachments "$ALL_BLOCKS" \
               '{
-                text: "🔔 *\($count) outstanding open PR(s)* in <\($repo_url)|\($repo)>",
+                text: "<!channel> 🔔 *\($count) outstanding open PR(s)* in <\($repo_url)|\($repo)>",
                 attachments: $attachments
               }')
           fi
