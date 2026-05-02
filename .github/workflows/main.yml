@@ -17,8 +17,8 @@ jobs:
           REPO="${{ github.repository }}"
           REPO_NAME="${{ github.event.repository.name }}"
           REPO_URL="https://github.com/$REPO"
+          NOW=$(date +%s)
 
-          # Fetch open PRs as JSON
           PRS_JSON=$(gh pr list --repo "$REPO" --state open \
             --json number,title,author,url,createdAt,headRefName)
 
@@ -28,28 +28,63 @@ jobs:
             PAYLOAD=$(jq -n \
               --arg repo "$REPO_NAME" \
               --arg repo_url "$REPO_URL" \
-              '{
-                text: "✅ No outstanding open PRs in <\($repo_url)|\($repo)>",
-              }')
+              '{ text: "✅ No outstanding open PRs in <\($repo_url)|\($repo)>" }')
           else
-            # Build one attachment block per PR
-            ATTACHMENTS=$(echo "$PRS_JSON" | jq -r \
-              --arg repo_url "$REPO_URL" '
-              [.[] | {
-                color: "#E8A838",
-                text: "*<\(.url)|#\(.number) \(.title)>*\nBranch: `\(.headRefName)` · Opened by <\($repo_url)/\(.author.login)|\(.author.login)>",
-                footer: "GitHub",
-                footer_icon: "https://github.githubassets.com/favicons/favicon.png",
-                ts: (.createdAt | fromdateiso8601)
-              }]')
+            HELP=$(echo "$PRS_JSON" | jq --argjson now "$NOW" \
+              '[.[] | select((($now - (.createdAt | fromdateiso8601)) / 86400) >= 14)]')
+            WAITING=$(echo "$PRS_JSON" | jq --argjson now "$NOW" \
+              '[.[] | select((($now - (.createdAt | fromdateiso8601)) / 86400) >= 3 and (($now - (.createdAt | fromdateiso8601)) / 86400) < 14)]')
+            NEW=$(echo "$PRS_JSON" | jq --argjson now "$NOW" \
+              '[.[] | select((($now - (.createdAt | fromdateiso8601)) / 86400) < 3)]')
+
+            build_attachments() {
+              local prs=$1
+              local color=$2
+              local label=$3
+              local desc=$4
+
+              echo "$prs" | jq -r \
+                --arg color "$color" \
+                --arg label "$label" \
+                --arg desc "$desc" \
+                --arg repo_url "$REPO_URL" \
+                --argjson now "$NOW" '
+                if length == 0 then []
+                else
+                  [{
+                    color: $color,
+                    text: "*\($label) \($desc)*"
+                  }] +
+                  [.[] |
+                    (($now - (.createdAt | fromdateiso8601)) / 86400 | floor) as $days |
+                    {
+                      color: $color,
+                      text: "#\(.number) \(.title) · @\(.author.login) · \($days) day(s)\n<\(.url)|View PR →>",
+                      footer: "GitHub",
+                      footer_icon: "https://github.githubassets.com/favicons/favicon.png",
+                      ts: (.createdAt | fromdateiso8601)
+                    }
+                  ]
+                end'
+            }
+
+            HELP_BLOCKS=$(build_attachments "$HELP"    "#FF4444" "💀 HELP"              "(2+ weeks)")
+            WAITING_BLOCKS=$(build_attachments "$WAITING" "#E8A838" "⏳ PATIENTLY WAITING" "(3 days – 2 weeks)")
+            NEW_BLOCKS=$(build_attachments "$NEW"      "#2EB67D" "✨ NEW PR"             "(just opened!)")
+
+            ALL_BLOCKS=$(jq -n \
+              --argjson h "$HELP_BLOCKS" \
+              --argjson w "$WAITING_BLOCKS" \
+              --argjson n "$NEW_BLOCKS" \
+              '$h + $w + $n')
 
             PAYLOAD=$(jq -n \
               --arg count "$COUNT" \
               --arg repo "$REPO_NAME" \
               --arg repo_url "$REPO_URL" \
-              --argjson attachments "$ATTACHMENTS" \
+              --argjson attachments "$ALL_BLOCKS" \
               '{
-                text: "🔔 *\($count) outstanding open PR(s)* in <\($repo_url)|\($repo)> needing attention:",
+                text: "🔔 *\($count) outstanding open PR(s)* in <\($repo_url)|\($repo)>",
                 attachments: $attachments
               }')
           fi
