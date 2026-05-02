@@ -2,7 +2,7 @@ name: Open PR Reminder
 
 on:
   schedule:
-    - cron: '0 2 * * 1-5'  # 9 AM WIB (UTC+7), Mon–Fri
+    - cron: '* * * * *'  # 9 AM WIB (UTC+7), Mon–Fri
   workflow_dispatch:
 
 jobs:
