@@ -1,0 +1,59 @@
+name: Open PR Reminder
+
+on:
+  schedule:
+    - cron: '0 2 * * 1-5'  # 9 AM WIB (UTC+7), Mon–Fri
+  workflow_dispatch:
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Open PR Reminder to Slack
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          REPO="${{ github.repository }}"
+          REPO_NAME="${{ github.event.repository.name }}"
+          REPO_URL="https://github.com/$REPO"
+
+          # Fetch open PRs as JSON
+          PRS_JSON=$(gh pr list --repo "$REPO" --state open \
+            --json number,title,author,url,createdAt,headRefName)
+
+          COUNT=$(echo "$PRS_JSON" | jq length)
+
+          if [ "$COUNT" -eq 0 ]; then
+            PAYLOAD=$(jq -n \
+              --arg repo "$REPO_NAME" \
+              --arg repo_url "$REPO_URL" \
+              '{
+                text: "✅ No outstanding open PRs in <\($repo_url)|\($repo)>",
+              }')
+          else
+            # Build one attachment block per PR
+            ATTACHMENTS=$(echo "$PRS_JSON" | jq -r \
+              --arg repo_url "$REPO_URL" '
+              [.[] | {
+                color: "#E8A838",
+                text: "*<\(.url)|#\(.number) \(.title)>*\nBranch: `\(.headRefName)` · Opened by <\($repo_url)/\(.author.login)|\(.author.login)>",
+                footer: "GitHub",
+                footer_icon: "https://github.githubassets.com/favicons/favicon.png",
+                ts: (.createdAt | fromdateiso8601)
+              }]')
+
+            PAYLOAD=$(jq -n \
+              --arg count "$COUNT" \
+              --arg repo "$REPO_NAME" \
+              --arg repo_url "$REPO_URL" \
+              --argjson attachments "$ATTACHMENTS" \
+              '{
+                text: "🔔 *\($count) outstanding open PR(s)* in <\($repo_url)|\($repo)> needing attention:",
+                attachments: $attachments
+              }')
+          fi
+
+          curl -s -X POST "$SLACK_WEBHOOK" \
+            -H 'Content-type: application/json' \
+            -d "$PAYLOAD"
