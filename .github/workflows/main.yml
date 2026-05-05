@@ -1,94 +1,93 @@
-# name: Open PR Reminder
+name: Open PR Reminder
 
-# on:
-#   schedule:
-#     - cron: '* * * * *'  # 9 AM WIB (UTC+7), Mon–Fri
-#   workflow_dispatch:
+on:
+  schedule:
+    - cron: '* * * * *'  # 9 AM WIB (UTC+7), Mon–Fri
+  workflow_dispatch:
 
-# jobs:
-#   remind:
-#     runs-on: ubuntu-latest
-#     steps:
-#       - name: Send Open PR Reminder to Slack
-#         env:
-#           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
-#         run: |
-#           REPO="${{ github.repository }}"
-#           REPO_NAME="${{ github.event.repository.name }}"
-#           REPO_URL="https://github.com/$REPO"
-#           NOW=$(date +%s)
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Open PR Reminder to Slack
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          REPO="${{ github.repository }}"
+          REPO_NAME="${{ github.event.repository.name }}"
+          REPO_URL="https://github.com/$REPO"
+          NOW=$(date +%s)
 
-#           PRS_JSON=$(gh pr list --repo "$REPO" --state open \
-#             --json number,title,author,url,createdAt,headRefName)
+          PRS_JSON=$(gh pr list --repo "$REPO" --state open --draft=false --json number,title,author,url,createdAt,headRefName)
 
-#           COUNT=$(echo "$PRS_JSON" | jq length)
+          COUNT=$(echo "$PRS_JSON" | jq length)
 
-#           if [ "$COUNT" -eq 0 ]; then
-#             PAYLOAD=$(jq -n \
-#               --arg repo "$REPO_NAME" \
-#               --arg repo_url "$REPO_URL" \
-#               '{ text: "✅ No outstanding open PRs in <\($repo_url)|\($repo)>" }')
-#           else
-#             HELP=$(echo "$PRS_JSON" | jq --argjson now "$NOW" \
-#               '[.[] | select((($now - (.createdAt | fromdateiso8601)) / 86400) >= 7)]')
-#             WAITING=$(echo "$PRS_JSON" | jq --argjson now "$NOW" \
-#               '[.[] | select((($now - (.createdAt | fromdateiso8601)) / 86400) >= 3 and (($now - (.createdAt | fromdateiso8601)) / 86400) < 7)]')
-#             NEW=$(echo "$PRS_JSON" | jq --argjson now "$NOW" \
-#               '[.[] | select((($now - (.createdAt | fromdateiso8601)) / 86400) < 3)]')
+          if [ "$COUNT" -eq 0 ]; then
+            PAYLOAD=$(jq -n \
+              --arg repo "$REPO_NAME" \
+              --arg repo_url "$REPO_URL" \
+              '{ text: "✅ No outstanding open PRs in <\($repo_url)|\($repo)>" }')
+          else
+            HELP=$(echo "$PRS_JSON" | jq --argjson now "$NOW" \
+              '[.[] | select((($now - (.createdAt | fromdateiso8601)) / 86400) >= 7)]')
+            WAITING=$(echo "$PRS_JSON" | jq --argjson now "$NOW" \
+              '[.[] | select((($now - (.createdAt | fromdateiso8601)) / 86400) >= 3 and (($now - (.createdAt | fromdateiso8601)) / 86400) < 7)]')
+            NEW=$(echo "$PRS_JSON" | jq --argjson now "$NOW" \
+              '[.[] | select((($now - (.createdAt | fromdateiso8601)) / 86400) < 3)]')
 
-#             build_attachments() {
-#               local prs=$1
-#               local color=$2
-#               local label=$3
-#               local desc=$4
+            build_attachments() {
+              local prs=$1
+              local color=$2
+              local label=$3
+              local desc=$4
 
-#               echo "$prs" | jq -r \
-#                 --arg color "$color" \
-#                 --arg label "$label" \
-#                 --arg desc "$desc" \
-#                 --arg repo_url "$REPO_URL" \
-#                 --argjson now "$NOW" '
-#                 if length == 0 then []
-#                 else
-#                   [{
-#                     color: $color,
-#                     text: "*\($label) \($desc)*"
-#                   }] +
-#                   [.[] |
-#                     (($now - (.createdAt | fromdateiso8601)) / 86400 | floor) as $days |
-#                     {
-#                       color: $color,
-#                       text: "#\(.number) \(.title) · @\(.author.login) · \($days) day(s) · <\(.url)|link>",
-#                       footer: "GitHub",
-#                       footer_icon: "https://github.githubassets.com/favicons/favicon.png",
-#                       ts: (.createdAt | fromdateiso8601)
-#                     }
-#                   ]
-#                 end'
-#             }
+              echo "$prs" | jq -r \
+                --arg color "$color" \
+                --arg label "$label" \
+                --arg desc "$desc" \
+                --arg repo_url "$REPO_URL" \
+                --argjson now "$NOW" '
+                if length == 0 then []
+                else
+                  [{
+                    color: $color,
+                    text: "*\($label) \($desc)*"
+                  }] +
+                  [.[] |
+                    (($now - (.createdAt | fromdateiso8601)) / 86400 | floor) as $days |
+                    {
+                      color: $color,
+                      text: "#\(.number) \(.title) · @\(.author.login) · \($days) day(s) · <\(.url)|link>",
+                      footer: "GitHub",
+                      footer_icon: "https://github.githubassets.com/favicons/favicon.png",
+                      ts: (.createdAt | fromdateiso8601)
+                    }
+                  ]
+                end'
+            }
 
-#             HELP_BLOCKS=$(build_attachments "$HELP"    "#FF4444" "💀 HELP!"              "(1+ weeks)")
-#             WAITING_BLOCKS=$(build_attachments "$WAITING" "#E8A838" "⏳ PATIENTLY WAITING" "(3 – 7 days)")
-#             NEW_BLOCKS=$(build_attachments "$NEW"      "#2EB67D" "✨ NEW PR"             "(just opened!)")
+            HELP_BLOCKS=$(build_attachments "$HELP"    "#FF4444" "💀 HELP!"              "(1+ weeks)")
+            WAITING_BLOCKS=$(build_attachments "$WAITING" "#E8A838" "⏳ PATIENTLY WAITING" "(3 – 7 days)")
+            NEW_BLOCKS=$(build_attachments "$NEW"      "#2EB67D" "✨ NEW PR"             "(just opened!)")
 
-#             ALL_BLOCKS=$(jq -n \
-#               --argjson h "$HELP_BLOCKS" \
-#               --argjson w "$WAITING_BLOCKS" \
-#               --argjson n "$NEW_BLOCKS" \
-#               '$h + $w + $n')
+            ALL_BLOCKS=$(jq -n \
+              --argjson h "$HELP_BLOCKS" \
+              --argjson w "$WAITING_BLOCKS" \
+              --argjson n "$NEW_BLOCKS" \
+              '$h + $w + $n')
 
-#             PAYLOAD=$(jq -n \
-#               --arg count "$COUNT" \
-#               --arg repo "$REPO_NAME" \
-#               --arg repo_url "$REPO_URL" \
-#               --argjson attachments "$ALL_BLOCKS" \
-#               '{
-#                 text: "<!channel> 🔔 *\($count) outstanding open PR(s)* in <\($repo_url)|\($repo)>",
-#                 attachments: $attachments
-#               }')
-#           fi
+            PAYLOAD=$(jq -n \
+              --arg count "$COUNT" \
+              --arg repo "$REPO_NAME" \
+              --arg repo_url "$REPO_URL" \
+              --argjson attachments "$ALL_BLOCKS" \
+              '{
+                text: "<!channel> 🔔 *\($count) outstanding open PR(s)* in <\($repo_url)|\($repo)>",
+                attachments: $attachments
+              }')
+          fi
 
-#           curl -s -X POST "$SLACK_WEBHOOK" \
-#             -H 'Content-type: application/json' \
-#             -d "$PAYLOAD"
+          curl -s -X POST "$SLACK_WEBHOOK" \
+            -H 'Content-type: application/json' \
+            -d "$PAYLOAD"
